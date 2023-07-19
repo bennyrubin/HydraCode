@@ -1,8 +1,16 @@
+#define ETHERTYPE_CHECKER 0x5678;
+
 header eth_type2_t {
   bit<16> value;
 }
 header variables_t {
   
+}
+header hops_preamble_t {
+  bit<8> num_items_hops;
+}
+header hops_item_t {
+  bit<16> value;
 }
 header slices_preamble_t {
   bit<8> num_items_slices;
@@ -23,7 +31,7 @@ struct hydra_metadata_t {
 }
 parser CheckerHeaderParser(packet_in packet, out hydra_header_t hydra_header,
                            inout hydra_metadata_t hydra_metadata) {
-  state parse_eth_type {
+  state start {
     packet.extract(hydra_header.eth_type);
     transition parse_variables;
   }
@@ -82,12 +90,11 @@ control CheckerHeaderDeparser(packet_out packet,
     packet.emit(hydra_header.slices);
   }
 }
-control initControl(in ingress_headers_t hdr,
-                    inout checker_header_t checker_header,
-                    inout checker_metadata_t checker_metadata) {
+control initControl(inout hydra_header_t hydra_header,
+                    inout hydra_metadata_t hydra_metadata) {
   action init_cp_vars(bit<32> switch_slice)
     {
-    checker_metadata.variables.switch_slice = switch_slice;
+    hydra_metadata.variables.switch_slice = switch_slice;
   }
   table tb_init_cp_vars {
     key = {
@@ -103,18 +110,17 @@ control initControl(in ingress_headers_t hdr,
     tb_init_cp_vars.apply();
     hydra_header.eth_type.setValid();
     hydra_header.eth_type.value = ETHERTYPE_CHECKER;
-    hydra_header.checker_header_types.setValid();
+    hydra_header.hydra_header_types.setValid();
     hydra_header.hydra_header_types.variables = 1w1;
     hydra_header.variables.setValid();
     hydra_header.variables.slices = 0;
   }
 }
-control telemetryControl(in ingress_headers_t hdr,
-                         inout checker_header_t checker_header,
-                         inout checker_metadata_t checker_metadata) {
+control telemetryControl(inout hydra_header_t hydra_header,
+                         inout hydra_metadata_t hydra_metadata) {
   action init_cp_vars(bit<32> switch_slice)
     {
-    checker_metadata.variables.switch_slice = switch_slice;
+    hydra_metadata.variables.switch_slice = switch_slice;
   }
   table tb_init_cp_vars {
     key = {
@@ -133,12 +139,11 @@ control telemetryControl(in ingress_headers_t hdr,
     hydra_header.slicess[0].slices = 1;
   }
 }
-control checkerControl(in ingress_headers_t hdr,
-                       inout checker_header_t checker_header,
-                       inout checker_metadata_t checker_metadata) {
+control checkerControl(inout hydra_header_t hydra_header,
+                       inout hydra_metadata_t hydra_metadata) {
   action init_cp_vars(bit<32> switch_slice)
     {
-    checker_metadata.variables.switch_slice = switch_slice;
+    hydra_metadata.variables.switch_slice = switch_slice;
   }
   table tb_init_cp_vars {
     key = {
@@ -162,21 +167,21 @@ control checkerControl(in ingress_headers_t hdr,
       {
       slice = hydra_header.slices[0];
       if (prev_slice!=slice) {
-        checker_metadata.reject0 = true;
+        hydra_metadata.reject0 = true;
       }
       prev_slice = slice;
       if (hydra_header.slices[1].isValid())
         {
         slice = hydra_header.slices[1];
         if (prev_slice!=slice) {
-          checker_metadata.reject0 = true;
+          hydra_metadata.reject0 = true;
         }
         prev_slice = slice;
         if (hydra_header.slices[2].isValid())
           {
           slice = hydra_header.slices[2];
           if (prev_slice!=slice) {
-            checker_metadata.reject0 = true;
+            hydra_metadata.reject0 = true;
           }
           prev_slice = slice;
         }

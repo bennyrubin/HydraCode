@@ -1,8 +1,10 @@
 /* -*- P4_16 -*- */
 #include <core.p4>
 #include <v1model.p4>
+#include "color_generated.p4"
 
 const bit<16> TYPE_IPV4 = 0x800;
+const bit<16> TYPE_HYDRA = 0x5678;
 
 /*************************************************************************
 *********************** H E A D E R S  ***********************************
@@ -15,6 +17,9 @@ typedef bit<32> ip4Addr_t;
 header ethernet_t {
     macAddr_t dstAddr;
     macAddr_t srcAddr;
+}
+
+header eth_type_t {
     bit<16>   etherType;
 }
 
@@ -35,10 +40,13 @@ header ipv4_t {
 
 struct metadata {
     /* empty */
+    hydra_metadata_t hydra_metadata;
 }
 
 struct headers {
     ethernet_t   ethernet;
+    hydra_header_t hydra_header;
+    eth_type_t eth_type;
     ipv4_t       ipv4;
 }
 
@@ -51,13 +59,32 @@ parser MyParser(packet_in packet,
                 inout metadata meta,
                 inout standard_metadata_t standard_metadata) {
 
+    CheckerHeaderParser() hydra_parser;
+
     state start {
         transition parse_ethernet;
     }
 
     state parse_ethernet {
         packet.extract(hdr.ethernet);
-        transition select(hdr.ethernet.etherType) {
+        transition parse_tele_or_eth_type;
+    }
+
+    state parse_tele_or_eth_type {
+        transition select(packet.lookahead<bit<16>>()) {
+            TYPE_HYDRA: parse_hydra_headers;
+            default: parse_eth_type;
+        }
+    }
+
+    state parse_hydra_headers {
+        hydra_parser.apply(packet, hdr.hydra_header, meta.hydra_metadata);
+        transition parse_eth_type;
+    }
+
+    state parse_eth_type {
+        packet.extract(hdr.eth_type);
+        transition select(hdr.eth_type.etherType) {
             TYPE_IPV4: parse_ipv4;
             default: accept;
         }
@@ -67,7 +94,6 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.ipv4);
         transition accept;
     }
-
 }
 
 /*************************************************************************
@@ -156,8 +182,13 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
 *************************************************************************/
 
 control MyDeparser(packet_out packet, in headers hdr) {
+
+    CheckerHeaderDeparser() hydra_deparser;
+
     apply {
         packet.emit(hdr.ethernet);
+        hydra_deparser.apply(packet, hdr.hydra_header);
+        packet.emit(hdr.eth_type);
         packet.emit(hdr.ipv4);
     }
 }
