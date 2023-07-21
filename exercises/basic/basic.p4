@@ -39,7 +39,8 @@ header ipv4_t {
 }
 
 struct metadata {
-    /* empty */
+    bool first_hop;
+    bool last_hop;
     hydra_metadata_t hydra_metadata;
 }
 
@@ -136,8 +137,27 @@ control MyIngress(inout headers hdr,
         default_action = drop();
     }
 
+    action set_first_hop() {
+        meta.first_hop = true;
+    }
+
+    table tb_check_first_hop {
+        key = {
+            standard_metadata.ingress_port: exact;
+        }
+        actions = {
+            @defaultonly NoAction;
+            set_first_hop;
+        }
+        const default_action = NoAction();
+        size = 512;
+    }
+
     apply {
-        initControl.apply(hdr.hydra_header, meta.hydra_metadata);
+        tb_check_first_hop.apply();
+        if (meta.first_hop) {
+            initControl.apply(hdr.hydra_header, meta.hydra_metadata);
+        }
         if (hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
         }
@@ -151,9 +171,32 @@ control MyIngress(inout headers hdr,
 control MyEgress(inout headers hdr,
                  inout metadata meta,
                  inout standard_metadata_t standard_metadata) {
+
+    action set_last_hop() {
+        meta.last_hop = true;
+    }
+
+    table tb_check_last_hop {
+        key = {
+            standard_metadata.egress_port: exact;
+        }
+        actions = {
+            @defaultonly NoAction;
+            set_last_hop;
+        }
+        const default_action = NoAction();
+        size = 512;
+    }
+
     apply {  
         telemetryControl.apply(hdr.hydra_header, meta.hydra_metadata);
-        checkerControl.apply(hdr.hydra_header, meta.hydra_metadata);
+        tb_check_last_hop.apply();
+        if (meta.last_hop) {
+            checkerControl.apply(hdr.hydra_header, meta.hydra_metadata);
+        }
+        if (meta.hydra_metadata.reject0) {
+            mark_to_drop(standard_metadata);
+        }
     }
 }
 
