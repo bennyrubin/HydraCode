@@ -1,7 +1,7 @@
 /* -*- P4_16 -*- */
 #include <core.p4>
 #include <v1model.p4>
-#include "color_generated.p4"
+#include "hydra/color_generated.p4"
 
 const bit<16> TYPE_IPV4 = 0x800;
 const bit<16> TYPE_HYDRA = 0x5678;
@@ -137,6 +137,7 @@ control MyIngress(inout headers hdr,
     }
 
     apply {
+        initControl.apply(hdr.hydra_header, meta.hydra_metadata);
         if (hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
         }
@@ -150,7 +151,10 @@ control MyIngress(inout headers hdr,
 control MyEgress(inout headers hdr,
                  inout metadata meta,
                  inout standard_metadata_t standard_metadata) {
-    apply {  }
+    apply {  
+        telemetryControl.apply(hdr.hydra_header, meta.hydra_metadata);
+        checkerControl.apply(hdr.hydra_header, meta.hydra_metadata);
+    }
 }
 
 /*************************************************************************

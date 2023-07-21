@@ -1,3 +1,5 @@
+#include <v1model.p4>
+
 #define ETHERTYPE_CHECKER 0x5678;
 
 header eth_type2_t {
@@ -5,12 +7,6 @@ header eth_type2_t {
 }
 header variables_t {
   
-}
-header hops_preamble_t {
-  bit<8> num_items_hops;
-}
-header hops_item_t {
-  bit<16> value;
 }
 header slices_preamble_t {
   bit<8> num_items_slices;
@@ -21,13 +17,13 @@ header slices_item_t {
 struct hydra_header_t {
   eth_type2_t eth_type;
   variables_t variables;
-  hops_preamble_t hops_preamble;
-  hops_item_t[4] hops;
   slices_preamble_t slices_preamble;
   slices_item_t[3] slices;
 }
 struct hydra_metadata_t {
+  bool reject0;
   bit<8> num_list_items;
+  bit<32> switch_slice;
 }
 parser CheckerHeaderParser(packet_in packet, out hydra_header_t hydra_header,
                            inout hydra_metadata_t hydra_metadata) {
@@ -37,35 +33,16 @@ parser CheckerHeaderParser(packet_in packet, out hydra_header_t hydra_header,
   }
   state parse_variables {
     packet.extract(hydra_header.variables);
-    transition parse_hops_preamble;
-  }
-  state parse_hops_preamble
-    {
-    packet.extract(hydra_header.hops_preamble);
-    hydra_metadata.num_list_items =
-    hydra_header.hops_preamble.num_hops_items;
-    transition select(hydra_metadata.num_list_items) {
-      0: parse_slices_preamble;
-      default: parse_hops;
-    }
+    transition parse_slices_preamble;
   }
   state parse_slices_preamble
     {
     packet.extract(hydra_header.slices_preamble);
     hydra_metadata.num_list_items =
-    hydra_header.slices_preamble.num_slices_items;
+    hydra_header.slices_preamble.num_items_slices;
     transition select(hydra_metadata.num_list_items) {
       0: accept;
       default: parse_slices;
-    }
-  }
-  state parse_hops
-    {
-    packet.extract(hydra_header.hops.next);
-    hydra_metadata.num_list_items = hydra_metadata.num_list_items-1;
-    transition select(hydra_metadata.num_list_items) {
-      0: parse_slices_preamble;
-      default: parse_hops;
     }
   }
   state parse_slices
@@ -79,13 +56,11 @@ parser CheckerHeaderParser(packet_in packet, out hydra_header_t hydra_header,
   }
 }
 control CheckerHeaderDeparser(packet_out packet,
-                              out hydra_header_t hydra_header) {
+                              in hydra_header_t hydra_header) {
   apply
     {
     packet.emit(hydra_header.eth_type);
     packet.emit(hydra_header.variables);
-    packet.emit(hydra_header.hops_preamble);
-    packet.emit(hydra_header.hops);
     packet.emit(hydra_header.slices_preamble);
     packet.emit(hydra_header.slices);
   }
@@ -94,7 +69,7 @@ control initControl(inout hydra_header_t hydra_header,
                     inout hydra_metadata_t hydra_metadata) {
   action init_cp_vars(bit<32> switch_slice)
     {
-    hydra_metadata.variables.switch_slice = switch_slice;
+    hydra_metadata.switch_slice = switch_slice;
   }
   table tb_init_cp_vars {
     key = {
@@ -110,17 +85,15 @@ control initControl(inout hydra_header_t hydra_header,
     tb_init_cp_vars.apply();
     hydra_header.eth_type.setValid();
     hydra_header.eth_type.value = ETHERTYPE_CHECKER;
-    hydra_header.hydra_header_types.setValid();
-    hydra_header.hydra_header_types.variables = 1w1;
-    hydra_header.variables.setValid();
-    hydra_header.variables.slices = 0;
+    hydra_header.slices_preamble.setValid();
+    hydra_header.slices_preamble.num_items_slices = 0;
   }
 }
 control telemetryControl(inout hydra_header_t hydra_header,
                          inout hydra_metadata_t hydra_metadata) {
   action init_cp_vars(bit<32> switch_slice)
     {
-    hydra_metadata.variables.switch_slice = switch_slice;
+    hydra_metadata.switch_slice = switch_slice;
   }
   table tb_init_cp_vars {
     key = {
@@ -134,16 +107,17 @@ control telemetryControl(inout hydra_header_t hydra_header,
   apply
     {
     tb_init_cp_vars.apply();
-    hydra_header.slicess.push_front(1);
-    hydra_header.slicess[0].setValid();
-    hydra_header.slicess[0].slices = 1;
+    hydra_header.slices.push_front(1);
+    hydra_header.slices[0].setValid();
+    hydra_header.slices[0].value = 1;
+    hydra_header.slices_preamble.num_items_slices = hydra_header.slices_preamble.num_items_slices + 1;
   }
 }
 control checkerControl(inout hydra_header_t hydra_header,
                        inout hydra_metadata_t hydra_metadata) {
   action init_cp_vars(bit<32> switch_slice)
     {
-    hydra_metadata.variables.switch_slice = switch_slice;
+    hydra_metadata.switch_slice = switch_slice;
   }
   table tb_init_cp_vars {
     key = {
@@ -157,29 +131,25 @@ control checkerControl(inout hydra_header_t hydra_header,
   apply
     {
     tb_init_cp_vars.apply();
-    hydra_header.eth_typ.setInvalid();
-    hydra_header.hydra_header_types.setInvalid();
-    hydra_header.hops_preamble.setInvalid();
-    hydra_header.variables.setInvalid();
-    bit<32> prev_slice = hydra_header.slices[0];
+    bit<32> prev_slice = hydra_header.slices[0].value;
     bit<32> slice;
     if (hydra_header.slices[0].isValid())
       {
-      slice = hydra_header.slices[0];
+      slice = hydra_header.slices[0].value;
       if (prev_slice!=slice) {
         hydra_metadata.reject0 = true;
       }
       prev_slice = slice;
       if (hydra_header.slices[1].isValid())
         {
-        slice = hydra_header.slices[1];
+        slice = hydra_header.slices[1].value;
         if (prev_slice!=slice) {
           hydra_metadata.reject0 = true;
         }
         prev_slice = slice;
         if (hydra_header.slices[2].isValid())
           {
-          slice = hydra_header.slices[2];
+          slice = hydra_header.slices[2].value;
           if (prev_slice!=slice) {
             hydra_metadata.reject0 = true;
           }
@@ -187,5 +157,12 @@ control checkerControl(inout hydra_header_t hydra_header,
         }
       }
     }
+
+    hydra_header.eth_type.setInvalid();
+    hydra_header.variables.setInvalid();
+    hydra_header.slices_preamble.setInvalid();
+    hydra_header.slices[0].setInvalid();
+    hydra_header.slices[1].setInvalid();
+    hydra_header.slices[2].setInvalid();
   }
 }
