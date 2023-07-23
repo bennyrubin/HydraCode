@@ -1,8 +1,6 @@
 /* -*- P4_16 -*- */
 #include <core.p4>
 #include <v1model.p4>
-#include "hydra/source_route_generated.p4"
-
 
 const bit<16> TYPE_IPV4 = 0x800;
 const bit<16> TYPE_SRCROUTING = 0x1234;
@@ -44,6 +42,9 @@ header ipv4_t {
     ip4Addr_t srcAddr;
     ip4Addr_t dstAddr;
 }
+
+#include "hydra/source_route_generated.p4"
+
 
 struct metadata {
     bool first_hop;
@@ -169,7 +170,7 @@ control MyIngress(inout headers hdr,
 
         tb_check_first_hop.apply();
         if (meta.first_hop) {
-            initControl.apply(hdr, hdr.hydra_header, meta.hydra_metadata);
+            initControl.apply(hdr.ipv4, hdr.hydra_header, meta.hydra_metadata);
         }
 
         if (hdr.srcRoutes[0].isValid()){

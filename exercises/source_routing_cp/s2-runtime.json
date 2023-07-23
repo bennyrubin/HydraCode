@@ -14,10 +14,30 @@
       "action_params": {}
     },
     {
+      "table": "MyIngress.tb_check_first_hop",
+      "match": {
+        "standard_metadata.ingress_port": [
+          2
+        ]
+      },
+      "action_name": "MyIngress.set_first_hop",
+      "action_params": {}
+    },
+    {
       "table": "MyEgress.tb_check_last_hop",
       "match": {
         "standard_metadata.egress_port": [
           1
+        ]
+      },
+      "action_name": "MyEgress.set_last_hop",
+      "action_params": {}
+    },
+    {
+      "table": "MyEgress.tb_check_last_hop",
+      "match": {
+        "standard_metadata.egress_port": [
+          2
         ]
       },
       "action_name": "MyEgress.set_last_hop",
@@ -32,7 +52,7 @@
       },
       "action_name": "MyEgress.telemetryControl.init_cp_vars",
       "action_params": {
-        "switch_id": 3
+        "switch_id": 2
       }
     }
   ]

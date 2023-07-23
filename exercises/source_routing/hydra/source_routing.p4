@@ -3,7 +3,6 @@
 #include <v1model.p4>
 #include "hydra/source_route_generated.p4"
 
-
 const bit<16> TYPE_IPV4 = 0x800;
 const bit<16> TYPE_SRCROUTING = 0x1234;
 const bit<16> TYPE_HYDRA = 0x5678;
@@ -58,8 +57,6 @@ struct headers {
     ipv4_t                  ipv4;
 }
 
-
-
 /*************************************************************************
 *********************** P A R S E R  ***********************************
 *************************************************************************/
@@ -83,7 +80,7 @@ parser MyParser(packet_in packet,
     state parse_hydra_or_eth_type {
         transition select(packet.lookahead<bit<16>>()) {
             TYPE_HYDRA: parse_hydra_headers;
-            default: parse_srcRouting_first;
+            default: parse_srcRouting;
         }
     }
 
@@ -169,7 +166,7 @@ control MyIngress(inout headers hdr,
 
         tb_check_first_hop.apply();
         if (meta.first_hop) {
-            initControl.apply(hdr, hdr.hydra_header, meta.hydra_metadata);
+            initControl.apply(hdr.hydra_header, meta.hydra_metadata);
         }
 
         if (hdr.srcRoutes[0].isValid()){

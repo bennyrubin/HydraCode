@@ -1,13 +1,9 @@
 /* -*- P4_16 -*- */
 #include <core.p4>
 #include <v1model.p4>
-#include "hydra/source_route_generated.p4"
-
 
 const bit<16> TYPE_IPV4 = 0x800;
 const bit<16> TYPE_SRCROUTING = 0x1234;
-const bit<16> TYPE_HYDRA = 0x5678;
-
 
 #define MAX_HOPS 9
 
@@ -46,19 +42,14 @@ header ipv4_t {
 }
 
 struct metadata {
-    bool first_hop;
-    bool last_hop; 
-    hydra_metadata_t hydra_metadata;
+    /* empty */
 }
 
 struct headers {
     ethernet_t              ethernet;
-    hydra_header_t          hydra_header;
     srcRoute_t[MAX_HOPS]    srcRoutes;
     ipv4_t                  ipv4;
 }
-
-
 
 /*************************************************************************
 *********************** P A R S E R  ***********************************
@@ -69,30 +60,12 @@ parser MyParser(packet_in packet,
                 inout metadata meta,
                 inout standard_metadata_t standard_metadata) {
 
-    CheckerHeaderParser() hydra_parser;
-
     state start {
         transition parse_ethernet;
     }
 
     state parse_ethernet {
         packet.extract(hdr.ethernet);
-        transition parse_hydra_or_eth_type;
-    }
-
-    state parse_hydra_or_eth_type {
-        transition select(packet.lookahead<bit<16>>()) {
-            TYPE_HYDRA: parse_hydra_headers;
-            default: parse_srcRouting_first;
-        }
-    }
-
-    state parse_hydra_headers {
-        hydra_parser.apply(packet, hdr.hydra_header, meta.hydra_metadata);
-        transition parse_srcRouting_first;
-    }
-
-    state parse_srcRouting_first {
         transition select(hdr.ethernet.etherType) {
             TYPE_SRCROUTING: parse_srcRouting;
             default: accept;
@@ -149,29 +122,7 @@ control MyIngress(inout headers hdr,
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
 
-    action set_first_hop() {
-        meta.first_hop = true;
-    }
-
-    table tb_check_first_hop {
-        key = {
-            standard_metadata.ingress_port: exact;
-        }
-        actions = {
-            @defaultonly NoAction;
-            set_first_hop;
-        }
-        const default_action = NoAction();
-        size = 512;
-    }
-
     apply {
-
-        tb_check_first_hop.apply();
-        if (meta.first_hop) {
-            initControl.apply(hdr, hdr.hydra_header, meta.hydra_metadata);
-        }
-
         if (hdr.srcRoutes[0].isValid()){
             if (hdr.srcRoutes[0].bos == 1){
                 srcRoute_finish();
@@ -193,32 +144,7 @@ control MyIngress(inout headers hdr,
 control MyEgress(inout headers hdr,
                  inout metadata meta,
                  inout standard_metadata_t standard_metadata) {
-    action set_last_hop() {
-        meta.last_hop = true;
-    }
-
-    table tb_check_last_hop {
-        key = {
-            standard_metadata.egress_port: exact;
-        }
-        actions = {
-            @defaultonly NoAction;
-            set_last_hop;
-        }
-        const default_action = NoAction();
-        size = 512;
-    }
-
-    apply {  
-        telemetryControl.apply(hdr.hydra_header, meta.hydra_metadata);
-        tb_check_last_hop.apply();
-        if (meta.last_hop) {
-            checkerControl.apply(hdr.hydra_header, meta.hydra_metadata);
-        }
-        if (meta.hydra_metadata.reject0) {
-            mark_to_drop(standard_metadata);
-        }
-    }
+    apply {  }
 }
 
 /*************************************************************************
@@ -234,12 +160,8 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
 *************************************************************************/
 
 control MyDeparser(packet_out packet, in headers hdr) {
-
-    CheckerHeaderDeparser() hydra_deparser;
-
     apply {
         packet.emit(hdr.ethernet);
-        hydra_deparser.apply(packet, hdr.hydra_header);
         packet.emit(hdr.srcRoutes);
         packet.emit(hdr.ipv4);
     }
